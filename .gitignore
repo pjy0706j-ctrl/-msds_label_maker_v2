@@ -1,16 +1,35 @@
-failure_logs/
-statistics/
-__pycache__/
-*.pyc
+# 빌드 결과물
 dist/
 build/
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
 
 # 임시 렌더링 파일
 temp_preview_*.png
 label_render_*.png
-label_render.html
-print_label.html
-preview.html
+label_render*.html
+print_label*.html
+preview*.html
+test_page.png
+
+# 로그 / 디버그 파일
+*.txt
+*.log
+app_error*.txt
+app_run.txt
+build_log.txt
+debug_load.txt
+run_debug.txt
+src_stderr.txt
+stderr.txt
+stdout.txt
+
+# 테스트 출력물
+test_output*.txt
+test_report.json
 
 # 기타
 *.crdownload

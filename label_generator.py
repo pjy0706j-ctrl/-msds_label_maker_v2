@@ -10,8 +10,13 @@ def image_to_base64(image_path):
 
 
 def make_pictogram_html(pictogram_files):
+    import sys
     pictogram_html = ""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    if getattr(sys, "frozen", False):
+        # PyInstaller 번들: ghs_images는 assets/ 하위에 위치
+        base_dir = os.path.join(sys._MEIPASS, "assets")
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
     image_dir = os.path.join(base_dir, "ghs_images")
 
     for img_file in pictogram_files:
@@ -240,16 +245,18 @@ body {{
 .label {{
     width: {spec['label_w']}mm;
     height: {spec['label_h']}mm;
+    max-height: {spec['label_h']}mm;
     box-sizing: border-box;
     border: 1px solid #999;
     padding: {spec['padding']}mm;
     padding-top: {"1.5mm" if spec["label_h"] <= 40 else "2mm"};
     padding-bottom: {"1.5mm" if spec["label_h"] <= 40 else "2mm"};
     font-size: 7px;
-    /* 내용 세로 가운데 정렬 */
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    align-items: stretch;
 }}
 
 .product {{
@@ -386,6 +393,27 @@ body {{
     margin-top: 0.5mm;
 }}
 
+/* ── 인쇄 전용 규칙 ── */
+@media print {{
+    @page {{
+        size: 210mm 297mm;
+        margin: 0;
+    }}
+    body {{
+        margin: 0;
+        padding: 0;
+    }}
+    .sheet {{
+        /* 인쇄 시 transform 없이 정확한 위치 */
+        page-break-inside: avoid;
+    }}
+    .label {{
+        overflow: hidden;
+        page-break-inside: avoid;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }}
+}}
 </style>
 </head>
 <body>
@@ -394,55 +422,78 @@ body {{
 </div>
 
 <script>
-// ── 라벨별 자동 축소 (폰트 + 간격) ─────────────────────
+// ── 라벨별 자동 축소: 내용이 라벨 높이를 초과하지 않도록 ──
 (function() {{
-  var MIN_FONT   = 3.0;    // 최소 글자 크기(px)
-  var MIN_MARGIN = 0;      // 최소 마진(px)
-  var FONT_STEP  = 0.2;
-  var MARGIN_STEP= 0.3;
+  var DPR        = window.devicePixelRatio || 1;
+  var PX_PER_MM  = 96 / 25.4;          // CSS px/mm (96dpi 기준)
+  var MIN_FONT   = 2.8;                 // px 최솟값
+  var MIN_LH     = 0.85;               // line-height 최솟값
+  var FONT_STEP  = 0.15;
+  var LH_STEP    = 0.02;
+  var PAD_STEP   = 0.2;
+  var MG_STEP    = 0.2;
 
-  function mmToPx(mm) {{ return mm * 3.7795275591; }}
+  var maxH_mm  = {spec['label_h']};
+  var maxH_px  = maxH_mm * PX_PER_MM;
+  var padOrig  = {spec['padding']} * PX_PER_MM;
 
-  var maxH = mmToPx({spec['label_h']});
-  // 라벨 안쪽 여백 원래값(mm→px)
-  var padPx = mmToPx({spec['padding']});
+  document.querySelectorAll('.label').forEach(function(lbl) {{
+    // overflow:hidden이면 scrollHeight가 maxH_px와 같아도 내용이 클 수 있음
+    // → 일시적으로 overflow:visible 로 바꿔 실제 높이 측정
+    lbl.style.overflow = 'visible';
 
-  document.querySelectorAll('.label').forEach(function(label) {{
-    var textEls   = label.querySelectorAll('.text, .small-text, .supplier, .supplier-large, .supplier-mini, .product');
-    var spacerEls = label.querySelectorAll('.section-title, .top-area, .pictograms');
+    var textEls   = Array.from(lbl.querySelectorAll(
+                      '.text,.small-text,.supplier,.supplier-large,.supplier-mini,.product'));
+    var spacerEls = Array.from(lbl.querySelectorAll(
+                      '.section-title,.top-area,.msds-bottom,.msds-mini'));
     var iter = 0;
 
-    while (label.scrollHeight > maxH * 1.005 && iter < 300) {{
-      var overflow = label.scrollHeight - maxH;
+    while (lbl.scrollHeight > maxH_px * 1.01 && iter < 400) {{
+      var ov = lbl.scrollHeight - maxH_px;
 
-      // 1단계: 섹션 간격 줄이기 (overflow 초반)
-      if (overflow > 2) {{
+      // 단계1: 여백/패딩 줄이기
+      if (ov > PX_PER_MM * 1) {{
         spacerEls.forEach(function(el) {{
-          var mt = parseFloat(el.style.marginTop || '0') || 0;
-          var mb = parseFloat(el.style.marginBottom || '0') || 0;
-          if (mt > MIN_MARGIN) el.style.marginTop    = Math.max(MIN_MARGIN, mt - MARGIN_STEP) + 'px';
-          if (mb > MIN_MARGIN) el.style.marginBottom = Math.max(MIN_MARGIN, mb - MARGIN_STEP) + 'px';
+          var mt = parseFloat(el.style.marginTop)  || 0;
+          var mb = parseFloat(el.style.marginBottom)|| 0;
+          if (mt > 0) el.style.marginTop    = Math.max(0, mt - MG_STEP) + 'px';
+          if (mb > 0) el.style.marginBottom = Math.max(0, mb - MG_STEP) + 'px';
         }});
-        // 라벨 내부 패딩도 줄이기
-        var cp = parseFloat(label.style.paddingTop || '{spec['padding']}mm') || padPx;
-        if (cp > 1) {{
-          var newP = Math.max(1, cp - 0.3);
-          label.style.padding = newP + 'px';
+        var curPad = parseFloat(lbl.style.paddingTop) || padOrig;
+        if (curPad > PX_PER_MM * 0.5) {{
+          var np = Math.max(PX_PER_MM * 0.5, curPad - PAD_STEP);
+          lbl.style.paddingTop    = np + 'px';
+          lbl.style.paddingBottom = np + 'px';
         }}
       }}
 
-      // 2단계: 글자 크기 줄이기
+      // 단계2: 폰트 크기 줄이기
       var reduced = false;
       textEls.forEach(function(el) {{
         var fs = parseFloat(window.getComputedStyle(el).fontSize);
         if (fs > MIN_FONT) {{
-          el.style.fontSize = (fs - FONT_STEP) + 'px';
+          el.style.fontSize = Math.max(MIN_FONT, fs - FONT_STEP) + 'px';
           reduced = true;
         }}
       }});
+
+      // 단계3: line-height 줄이기 (폰트 최솟값 도달 후)
+      if (!reduced) {{
+        textEls.forEach(function(el) {{
+          var lh = parseFloat(el.style.lineHeight) || 1.05;
+          if (lh > MIN_LH) {{
+            el.style.lineHeight = Math.max(MIN_LH, lh - LH_STEP).toFixed(3);
+            reduced = true;
+          }}
+        }});
+      }}
+
       if (!reduced) break;
       iter++;
     }}
+
+    // 자동축소 완료 → 다시 overflow:hidden (인쇄 시 경계 벗어남 방지)
+    lbl.style.overflow = 'hidden';
   }});
 }})();
 </script>

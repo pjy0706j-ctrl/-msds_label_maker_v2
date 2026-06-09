@@ -177,13 +177,14 @@ def extract_product_name(text):
             if len(c) < 3 or re.match(r"^[\d\s\-\.]+$", c):
                 continue
             # 라벨 헤더 자체("제품명", "Product name" 등) 건너뜀
-            if re.match(r"^(제품명|상품명|화학제품명|Product\s*(?:name|identifier))$", c, re.IGNORECASE):
+            if re.match(r"^(제품명|상품명|화학제품명|제품\s*정보|물질명|Product\s*(?:name|identifier)|제품\s*유형)$", c, re.IGNORECASE):
                 continue
             return c
 
     patterns = [
         (r"가\.\s*제품명",  r"나\.\s*제품"),
         (r"가\.제품명",     r"나\.제품"),
+        (r"가\.\s*품명",    r"나\.\s*제품"),   # S-Oil 형식
         (r"제품명",         r"나\.\s*제품"),
         (r"Product\s*name", r"Recommended|Product\s*type|Reference\s*number|CAS"),
     ]
@@ -211,12 +212,25 @@ def extract_product_name_retry(text):
         r"Product\s*Name\s*[:：]?\s*(.+)",
         r"상품명\s*[:：]?\s*(.+)",
         r"화학제품명\s*[:：]?\s*(.+)",
+        # 이람 스타일: "가제품명\n. \n{name}"
+        r"[가]?\s*제품명\n[. ]+\n(.+)",
+        # 제목 바로 아래 줄 (MSDS 타이틀 이후)
+        r"물질안전보건자료\s*[\(\（]?MSDS[\)\）]?\s*\n([^\n]+)\n",
+        # "- Product_Name \n가. 제품의 권고용도" 전
+        r"-\s+(.+)\s*\n나\.\s*제품",
+        # 상 품 명: BUTYLVER (Fenzi 등 유럽 형식)
+        r"상\s*품\s*명\s*[:：]\s*(.+)",
+        # 가. 제 품 명 (발보린 등)
+        r"가\.\s*제\s*품\s*명\s*\n(.+)",
+        # - 제품명: 흡습제 (PEKO 등 " - 제품명:" 형식)
+        r"-\s*제품명\s*[:：]\s*(.+)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             result = match.group(1).split("\n")[0].strip()
-            if len(result) > 3:
+            result = re.sub(r"^[-:：\s]+", "", result).strip()
+            if len(result) > 2:
                 return result
     return ""
 
@@ -257,24 +271,38 @@ def _clean_supplier_result(raw: str) -> str:
 def extract_supplier_info(text):
     patterns = [
         # ── 한국어 패턴 ──
-        (r"c\.\s*회사명",          r"d\.\s*|항\s*2"),          # Sigma 한국어
-        (r"다\.\s*공급자\s*정보",  r"2\.\s*유해"),
-        (r"다\.\s*공급자정보",     r"2\.\s*유해"),
-        (r"다\.\s*제조자.*?정보",  r"2\.\s*유해"),
-        (r"다\.\s*공급자\s*정보",  r"Section\s*2"),
-        (r"다\.공급자\s*정보",     r"Section\s*2"),
-        (r"다\.\s*공급자정보",     r"Section\s*2"),
-        (r"다\.공급자정보",        r"Section\s*2"),
-        (r"공급자\s*정보",         r"2\.\s*유해"),
-        (r"공급자\s*정보",         r"Section\s*2"),
-        (r"회사에\s*관한\s*정보",  r"2\.\s*유해"),
-        (r"회사에\s*관한\s*정보",  r"Section\s*2"),
-        (r"공급자",                r"2\.\s*유해"),
+        (r"c\.\s*회사명",                   r"d\.\s*|항\s*2"),          # Sigma 한국어
+        (r"다\.\s*공급자\s*정보",            r"2\.\s*(?:유해|위험)"),
+        (r"다\.\s*공급자정보",              r"2\.\s*(?:유해|위험)"),
+        (r"다\.\s*제조자.*?공급자.*?정보",  r"2\.\s*(?:유해|위험)"),     # S-Oil
+        (r"다\.\s*제조자.*?정보",           r"2\.\s*(?:유해|위험)"),
+        (r"다\.\s*공급자\s*정보",            r"Section\s*2"),
+        (r"다\.공급자\s*정보",              r"Section\s*2"),
+        (r"다\.\s*공급자정보",              r"Section\s*2"),
+        (r"다\.공급자정보",                 r"Section\s*2"),
+        (r"공급자\s*정보",                  r"2\.\s*(?:유해|위험)"),
+        (r"공급자\s*정보",                  r"Section\s*2"),
+        (r"○\s*공급자[/\/유통업자]*\s*정보", r"3\.\s*구성성분|2\.\s*유해|Section\s*3"),  # 쿠리타/OMEGA 스타일
+        (r"회사에\s*관한\s*정보",            r"2\.\s*(?:유해|위험)"),
+        (r"회사에\s*관한\s*정보",            r"Section\s*2"),
+        (r"공급자",                         r"2\.\s*(?:유해|위험)"),
         # ── 영문 패턴 ──
-        (r"Company\s*information", r"2\.\s*Hazard|Section\s*2"),
-        (r"Details?\s*of\s*the\s*supplier", r"2\.\s*Hazard|Section\s*2"),
-        (r"Manufacturer\s*/\s*Supplier",    r"2\.\s*Hazard|Section\s*2"),
-        (r"Supplier\s*information",         r"2\.\s*Hazard|Section\s*2"),
+        (r"Company\s*information",          r"2\.\s*(?:Hazard|Summary)|Section\s*2"),
+        (r"Details?\s*of\s*the\s*supplier", r"2\.\s*(?:Hazard|Summary)|Section\s*2"),
+        (r"Manufacturer\s*/\s*Supplier",    r"2\.\s*(?:Hazard|Summary)|Section\s*2"),
+        (r"Supplier\s*information",         r"2\.\s*(?:Hazard|Summary)|Section\s*2"),
+        # ── 기타 특수 형식 ──
+        (r"공급자\s*[:：]\s*\n",            r"섹션\s*2|2\.\s*유해|Section\s*2"),  # Unicer
+        (r"공급자\s*정보\s*[:：]",          r"제\s*\d+\s*항|2\.\s*유해"),         # Mobilfluid
+        # ── 영문/혼합 특수 형식 ──
+        (r"c\.\s*Company",                  r"SECTION\s*2|Section\s*2"),           # Sigma-Aldrich English
+        (r"Name\s+of\s+manufacturer",       r"Name\s+of\s+section|Section\s+2|응급"),  # Kanto
+        (r"Supplier\s*\n(?!\s*[Ii]nfo)",   r"Emergency|Section\s*2|SECTION\s*2"), # WAKO/FUJIFILM
+        (r"보건자료\s*공급자\s*정보",       r"2\s*항|2\.\s*유해|Section\s*2"),     # SG 124 8NF (Veolia)
+        (r"회사\s*[:：]\s*\n",             r"섹션\s*2|2\.\s*위험"),               # BUTYLVER (Fenzi)
+        (r"제조사[/\/]공급사\s*[:：]",     r"2\s*위험|2\.\s*위험"),              # XRF Scientific
+        (r"1\.[23]\.\s*공급자\s*정보",     r"2\.\s*(?:위해|유해)"),               # PEKO 형식 1.3. 공급자정보
+        (r"제조자[/\/]공급자\s*[:：]\s*\n", r"2\.\s*(?:유해|위험)|제\s*2\s*항"),   # MobilRarus 제조자/공급자:
     ]
 
     for start, end in patterns:
@@ -290,14 +318,36 @@ def extract_supplier_info(text):
         if result:
             return translate_to_korean(result)  # 영문이면 자동 번역
 
+    # ── Fallback A2: 다.제조자/공급자 정보 직후 블록 (PDF 페이지 순서 문제, 두산 등) ──
+    for m in re.finditer(r"다\.\s*제조자[/\/]?공급자[/\/유통업자]*\s*정보", text):
+        chunk = text[m.end():m.end() + 500]
+        sec_end = re.search(r"--- Page \d+|두산|MSDS Ver\.|버전", chunk)
+        if sec_end:
+            chunk = chunk[:sec_end.start()]
+        result = _clean_supplier_result(clean_text(chunk))
+        if result:
+            return result
+
+    # ── Fallback B: ○공급자/유통업자 정보 직후 블록 추출 (OMEGA/쿠리타 등 PDF 페이지 순서 문제) ──
+    for m in re.finditer(r"○\s*공급자[/\/유통업자]*\s*정보", text):
+        # start 이후 1000자 내에서 실제 회사 정보 추출
+        chunk = text[m.end():m.end() + 1000]
+        # 다음 섹션(3.구성성분) 까지만
+        sec_end = re.search(r"3\.\s*구성성분|--- Page \d+", chunk)
+        if sec_end:
+            chunk = chunk[:sec_end.start()]
+        result = _clean_supplier_result(clean_text(chunk))
+        if result:
+            return result
+
     # ── Fallback: 섹션2 바로 앞 600자에서 회사 정보 추출 (OCI 등) ──
-    sec2_match = re.search(r"2\.\s*유해", text)
+    sec2_match = re.search(r"2\.\s*(?:유해|위험)|유해.{0,5}위험.{0,5}성\s*\n2\.", text)
     if sec2_match:
         # 섹션2 직전 600자만 사용 (TOC 플레이스홀더 영역 제외)
         before_sec2 = text[max(0, sec2_match.start() - 600):sec2_match.start()]
-        # ㈜ 또는 Tel 포함 블록 탐색
+        # ㈜ / 주식회사 / (주) / Tel 포함 블록 탐색
         all_matches = list(re.finditer(
-            r"([^\n]*(?:㈜|주식회사|Tel\s*:)[^\n]*(?:\n[^\n]*){0,8})",
+            r"([^\n]*(?:㈜|\(주\)|주식회사|Tel\s*:)[^\n]*(?:\n[^\n]*){0,8})",
             before_sec2,
             re.IGNORECASE,
         ))
@@ -340,10 +390,12 @@ def extract_signal_word(parse_text):
 
     patterns = [
         r"신호어\s*[:：]?\s*(위험|경고)",
-        r"신호어\s*[:：]?\s*\n\s*(위험|경고)",
+        r"신호어\s*[:：]?\s*\n\s*-?\s*(위험|경고)",   # 신호어\n- 경고
+        r"신호어\s*\n\s*[-•○▪]\s*\n\s*(위험|경고)",  # S-Oil: 신호어\n-\n위험
         r"\d\)\s*신호어\s*[\n\s]*-?\s*(위험|경고)",   # Chlorine: 2) 신호어\n - 위험
         r"신호어\s*[:：]?\s*([가-힣\s]{1,10})\s*유해",
         r"Signal\s*word\s*[:：]?\s*(Danger|Warning)",
+        r"Signal\s*word\s*\n\s*[:：]\s*(Danger|Warning)",  # Kanto: Signal word\n：Danger
     ]
     for pattern in patterns:
         match = re.search(pattern, normalized, re.IGNORECASE)
@@ -360,17 +412,86 @@ def extract_signal_word(parse_text):
     lines = [line.strip() for line in normalized.splitlines() if line.strip()]
     for i, line in enumerate(lines):
         compact = re.sub(r"\s+", "", line)
-        if compact == "신호어":
-            for next_line in lines[i + 1:i + 6]:
-                next_compact = re.sub(r"\s+", "", next_line)
-                if next_compact in ["위험", "경고"]:
-                    return next_compact
+        if compact in ("신호어", "Signalword"):
+            for next_line in lines[i + 1:i + 8]:
+                # 대시/불릿 등 접두어 제거 후 비교
+                next_clean = re.sub(r"^[-•○▪·：:]+\s*", "", next_line.strip())
+                next_clean = re.sub(r"\s+", "", next_clean)
+                if next_clean in ("위험", "경고"):
+                    return next_clean
+                if next_clean == "Danger":
+                    return "위험"
+                if next_clean == "Warning":
+                    return "경고"
         if compact in ["위험", "경고"]:
             nearby = "\n".join(lines[i:i + 6])
             if "유해" in nearby or re.search(r"H\d{3}", nearby):
                 return compact
 
     return ""
+
+
+# H코드로 신호어 추론 (문서에 명시 없을 때 fallback)
+_SIGNAL_DANGER_CODES = {
+    "H200", "H201", "H202", "H203", "H204", "H205",
+    "H220", "H221", "H222", "H223", "H224", "H225",
+    "H240", "H241", "H250", "H251", "H260", "H270",
+    "H290", "H300", "H301", "H310", "H311",
+    "H314", "H318", "H330", "H331", "H334",
+    "H340", "H350", "H360", "H370",
+}
+
+def infer_signal_word_from_h_codes(h_codes):
+    """H코드 목록으로 신호어 추론 (위험 > 경고 순)"""
+    for code in h_codes:
+        if code in _SIGNAL_DANGER_CODES:
+            return "위험"
+    if h_codes:
+        return "경고"
+    return ""
+
+
+# ── 한국어 H코드 문구 → 코드 역매핑 (한국어 SDS 코드 없는 경우) ──
+_HCODE_KO_REVERSE = {
+    r"극인화성\s*가스":                              "H220",
+    r"인화성\s*가스":                                "H221",
+    r"극인화성\s*에어로졸":                          "H222",
+    r"극인화성\s*액체\s*및\s*증기":                  "H224",
+    r"고인화성\s*액체\s*및\s*증기":                  "H225",
+    r"인화성\s*액체\s*및\s*증기":                    "H226",
+    r"고압\s*가스.*가열.*폭발":                       "H280",
+    r"삼키면\s*치명적":                              "H300",
+    r"삼키면\s*유독":                                "H301",
+    r"삼키면\s*유해":                                "H302",
+    r"삼켜서\s*기도로\s*유입되면\s*치명":            "H304",
+    r"피부\s*접촉.*치명|피부와\s*접촉.*치명":        "H310",
+    r"피부\s*접촉.*유독|피부와\s*접촉.*유독":        "H311",
+    r"피부\s*접촉.*유해|피부와\s*접촉.*유해":        "H312",
+    r"피부\s*부식성\s*및\s*심한\s*눈\s*손상|심한\s*피부\s*화상\s*및\s*눈": "H314",
+    r"피부에\s*자극을\s*일으킴|가벼운\s*피부\s*자극": "H315",
+    r"알레르기성\s*피부\s*반응":                     "H317",
+    r"심한\s*눈\s*손상":                             "H318",
+    r"눈에\s*심한\s*자극":                           "H319",
+    r"호흡기계\s*자극":                              "H335",
+    r"흡입하면\s*치명|흡입.*치명적":                 "H330",
+    r"흡입하면\s*유독":                              "H331",
+    r"흡입하면\s*유해":                              "H332",
+    r"졸음\s*또는\s*현기증":                         "H336",
+    r"장기간.*반복.*장기에\s*손상|장기에\s*손상.*장기간": "H372",
+    r"장기간.*반복.*손상.*우려|장기간.*반복.*장기\s*손상\s*유발\s*우려": "H373",
+    r"유전적인\s*결함\s*일으킬\s*수\s*있음":         "H341",
+    r"유전적인\s*결함\s*일으킬\s*수\s*있음":         "H341",
+    r"암을\s*일으킬\s*수\s*있음|암\s*유발\s*우려":   "H351",
+    r"태아.*손상|생식독성":                          "H361",
+    r"표적장기에\s*손상을\s*줌":                     "H370",
+    r"수생생물에\s*매우\s*유독하며.*영향":            "H410",
+    r"수생생물에\s*유독하며.*영향":                  "H411",
+    r"수생생물에게\s*해로우며.*영향":                 "H412",
+    r"수생생물에게\s*장기적인\s*영향":               "H413",
+    r"수생생물에\s*매우\s*유독":                     "H400",
+    r"수생생물에\s*유독":                            "H400",
+    r"수생물에게\s*장기적인\s*영향":                 "H413",
+}
 
 
 # ── 영문 H코드 문구 → 코드 역매핑 (코드 없는 영문 SDS 대응) ──
@@ -418,15 +539,41 @@ def extract_h_codes(text):
             seen.add(c)
             unique.append(c)
 
-    # H코드 없으면 영문 텍스트 역매핑 시도
+    # H코드 없으면 영문/한국어 텍스트 역매핑 시도
     if not unique:
         text_lower = text.lower()
         for pattern, code in _HCODE_EN_REVERSE.items():
             if re.search(pattern, text_lower) and code not in seen:
                 seen.add(code)
                 unique.append(code)
+        if not unique:
+            # 한국어 역매핑: 패턴 직후 "자료없음/해당없음"이 따라오는 경우 제외
+            for pattern, code in _HCODE_KO_REVERSE.items():
+                for m in re.finditer(pattern, text, re.IGNORECASE):
+                    after = text[m.end():m.end() + 30]
+                    if re.search(r"자료\s*없음|해당\s*없음|not\s*applicable", after, re.IGNORECASE):
+                        continue  # "자료없음" 뒤이면 건너뜀
+                    if code not in seen:
+                        seen.add(code)
+                        unique.append(code)
+                    break
 
     return unique
+
+
+def _extract_h_codes_from_korean_phrases(section_text: str) -> list:
+    """한국어 유해위험문구 섹션에서만 코드 추론"""
+    if re.search(r"자료\s*없음|해당\s*없음|적용되지\s*않음", section_text, re.IGNORECASE):
+        content = re.sub(r"자료\s*없음|해당\s*없음|적용되지\s*않음", "", section_text)
+        if len(content.strip()) < 20:
+            return []
+    seen = set()
+    result = []
+    for pattern, code in _HCODE_KO_REVERSE.items():
+        if re.search(pattern, section_text, re.IGNORECASE) and code not in seen:
+            seen.add(code)
+            result.append(code)
+    return result
 
 
 def extract_hazard_statements(parse_text):
@@ -436,7 +583,7 @@ def extract_hazard_statements(parse_text):
     # ── 유해위험문구 섹션 추출 시도 ──
     section_text = ""
     sec_start = re.search(
-        r"유해\s*·?\s*위험\s*문구|Hazard\s+statements?|HAZARD\s+STATEMENT",
+        r"유해\s*[·.]?\s*위험\s*문구|Hazard\s+statements?|HAZARD\s+STATEMENT",
         parse_text, re.IGNORECASE,
     )
     if sec_start:
@@ -450,7 +597,32 @@ def extract_hazard_statements(parse_text):
 
     # 섹션을 찾았고 H코드가 있으면 섹션 내에서만 추출
     codes_from_section = extract_h_codes(section_text) if section_text else []
-    codes = codes_from_section if codes_from_section else extract_h_codes(parse_text)
+    # 한국어 역매핑은 섹션 텍스트에서만 적용 (오탐지 방지)
+    if not codes_from_section and section_text:
+        codes_from_section = _extract_h_codes_from_korean_phrases(section_text)
+
+    # 섹션 2 전체 텍스트(2.유해위험성 ~ 3.구성성분)에서 "해당없음" 여부 확인
+    sec2_start = re.search(r"2\.\s*(?:유해|위해)", parse_text)
+    sec2_end   = re.search(r"3\.\s*구성", parse_text)
+    sec2_text  = ""
+    if sec2_start and sec2_end and sec2_end.start() > sec2_start.start():
+        sec2_text = parse_text[sec2_start.start():sec2_end.start()]
+
+    _none_pattern = r"해당\s*없음|자료\s*없음|해당\s*사항\s*없음|분류\s*되지\s*않음|적용되지\s*않음"
+    section_is_none = (
+        (section_text and re.search(_none_pattern, section_text, re.IGNORECASE))
+        or (sec2_text and re.search(_none_pattern, sec2_text, re.IGNORECASE)
+            and not re.search(r"H\d{3}", sec2_text))
+    )
+
+    if codes_from_section:
+        codes = codes_from_section
+    elif section_text and not section_is_none:
+        codes = extract_h_codes(parse_text)
+    elif not section_text:
+        codes = extract_h_codes(parse_text)
+    else:
+        codes = []  # 섹션 있고 해당없음 → 빈 목록
 
     lines = []
     for code in codes:
@@ -524,6 +696,74 @@ def extract_precautionary_statements(parse_text):
 
 def _extract_precautionary_from_english_text(text: str) -> str:
     """P코드 없는 영문 SDS에서 Prevention/Response/Storage/Disposal 섹션을 추출하고 번역"""
+    # ── 한국어 번호 섹션 형식: 1)예방 2)대응 3)저장 4)폐기 (CleanLub 등 구형 MSDS) ──
+    ko_prec_m = re.search(r"예방조치\s*문구", text, re.IGNORECASE)
+    if ko_prec_m:
+        block = text[ko_prec_m.end():]
+        end_ko = re.search(r"3\.\s*구성|다\.\s*유해|나\.\s*경고|--- Page \d+", block)
+        if end_ko:
+            block = block[:end_ko.start()]
+        ko_secs = {
+            "예방": re.compile(r"(?:1\s*\)|①\s*)?예방", re.IGNORECASE),
+            "대응": re.compile(r"(?:2\s*\)|②\s*)?대응", re.IGNORECASE),
+            "저장": re.compile(r"(?:3\s*\)|③\s*)?저장", re.IGNORECASE),
+            "폐기": re.compile(r"(?:4\s*\)|④\s*)?폐기", re.IGNORECASE),
+        }
+        positions_ko = []
+        for sec_name, pat in ko_secs.items():
+            mm = pat.search(block)
+            if mm:
+                positions_ko.append((mm.start(), sec_name, mm.end()))
+        positions_ko.sort(key=lambda x: x[0])
+        if len(positions_ko) >= 2:
+            sec_data_ko = []
+            for idx, (pos, sec_name, content_start) in enumerate(positions_ko):
+                end_pos = positions_ko[idx + 1][0] if idx + 1 < len(positions_ko) else min(len(block), content_start + 500)
+                raw = block[content_start:end_pos].strip()
+                lines = [re.sub(r"^[-\.\s]+", "", l.strip()) for l in raw.splitlines() if len(l.strip()) > 5]
+                lines = [l for l in lines if l and not re.match(r"BIOLUBE|Company|page", l, re.IGNORECASE)]
+                if lines:
+                    sec_data_ko.append((sec_name, lines[:2]))
+            if sec_data_ko:
+                output = ""
+                for sec_name, selected in sec_data_ko:
+                    output += f"<{sec_name}>\n" + "\n".join(selected) + "\n"
+                return output.strip()
+
+    # ── Kanto 형식: Cautions → Safety measurements / First-aid measures / Storage / Disposal ──
+    cautions_m = re.search(r"\bCautions?\b", text, re.IGNORECASE)
+    if cautions_m:
+        cautions_block = text[cautions_m.end():]
+        end_m2 = re.search(r"\n\s*3\.\s*Compos|\n\s*3\.\s*Ingred|^4\.", cautions_block, re.IGNORECASE | re.MULTILINE)
+        if end_m2:
+            cautions_block = cautions_block[:end_m2.start()]
+        kanto_sections = {
+            "예방": re.compile(r"Safety\s+measurements?", re.IGNORECASE),
+            "대응": re.compile(r"First.aid\s+measures?", re.IGNORECASE),
+            "저장": re.compile(r"\bStorage\b", re.IGNORECASE),
+            "폐기": re.compile(r"\bDisposal\b", re.IGNORECASE),
+        }
+        positions2 = []
+        for sec_name, pat in kanto_sections.items():
+            mm = pat.search(cautions_block)
+            if mm:
+                positions2.append((mm.start(), sec_name, mm.end()))
+        positions2.sort(key=lambda x: x[0])
+        if len(positions2) >= 1:
+            sec_data2 = []
+            for idx, (pos, sec_name, content_start) in enumerate(positions2):
+                end_pos = positions2[idx + 1][0] if idx + 1 < len(positions2) else len(cautions_block)
+                raw = cautions_block[content_start:end_pos].strip()
+                raw = re.sub(r"^[:：]\s*", "", raw)
+                lines = [l.strip() for l in raw.splitlines() if len(l.strip()) > 5]
+                if lines:
+                    sec_data2.append((sec_name, lines[:2]))
+            if sec_data2:
+                output = ""
+                for sec_name, selected in sec_data2:
+                    output += f"<{sec_name}>\n" + "\n".join(selected) + "\n"
+                return output.strip()
+
     m = re.search(r"PRECAUTIONARY\s+STATEMENT|Precautionary\s+[Ss]tatements?", text, re.IGNORECASE)
     if not m:
         return ""
@@ -842,6 +1082,46 @@ def select_precautionary_statements(text, company_type="DEFAULT", total_count=9,
 def get_h_codes(text):
     """hazard 문구 또는 원문 텍스트에서 H코드 리스트 반환"""
     return re.findall(r"H\d{3}", text)
+
+
+def is_non_hazardous(parse_text: str) -> bool:
+    """섹션 2 유해위험성이 명시적으로 해당없음/자료없음인 경우 True 반환.
+    (스캔 PDF 등 텍스트 없음 케이스는 False 반환)"""
+    _none = r"해당\s*없음|자료\s*없음|해당\s*사항\s*없음|분류\s*되지\s*않음|적용되지\s*않음|없음\s*[.\.]?"
+    # 위험 문구: 없음 / Hazard statements: None 패턴 (BUTYLVER 등)
+    _no_hazard_stmt = re.search(
+        r"(?:위험|유해)\s*문구\s*[:：]\s*없음|Hazard\s+statements?\s*[:：]?\s*[Nn]one",
+        parse_text, re.IGNORECASE,
+    )
+    if _no_hazard_stmt:
+        return True
+    # 유해위험문구 섹션 텍스트 추출
+    sec_start = re.search(
+        r"유해\s*[·.]?\s*위험\s*문구|Hazard\s+statements?", parse_text, re.IGNORECASE
+    )
+    if sec_start:
+        chunk = parse_text[sec_start.start():]
+        sec_end = re.search(
+            r"예방\s*조치\s*문구|Precautionary\s+statements?|3\.\s*구성성분",
+            chunk, re.IGNORECASE,
+        )
+        section_text = chunk[:sec_end.start()] if sec_end else chunk[:500]
+        if re.search(_none, section_text, re.IGNORECASE):
+            return True
+    # 섹션 2 전체 확인 (2.유해 ~ 3.구성 또는 섹션2 ~ 섹션3)
+    for s2_pat, s3_pat in [
+        (r"2\.\s*(?:유해|위해)", r"3\.\s*구성"),
+        (r"섹션\s*2", r"섹션\s*3"),
+        (r"SECTION\s*2", r"SECTION\s*3"),
+    ]:
+        sec2_start = re.search(s2_pat, parse_text, re.IGNORECASE)
+        sec2_end   = re.search(s3_pat, parse_text, re.IGNORECASE)
+        if sec2_start and sec2_end and sec2_end.start() > sec2_start.start():
+            sec2 = parse_text[sec2_start.start():sec2_end.start()]
+            if re.search(_none, sec2, re.IGNORECASE) and not re.search(r"H\d{3}", sec2):
+                return True
+            break
+    return False
 
 
 def match_pictograms(h_codes):
