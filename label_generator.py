@@ -60,6 +60,35 @@ def safe_html_text(text):
     return html.escape(text or "")
 
 
+def _make_label_cells(label_html: str, spec: dict, offset_x: float, offset_y: float) -> str:
+    """
+    CSS grid 대신 절대좌표로 각 라벨을 배치.
+    브라우저 렌더링 오차가 누적되지 않아 아이라벨 용지 규격에 정확히 맞음.
+    """
+    cols      = spec["cols"]
+    rows      = spec["rows"]
+    label_w   = spec["label_w"]
+    label_h   = spec["label_h"]
+    margin_l  = spec["margin_left"]  + offset_x
+    margin_t  = spec["margin_top"]   + offset_y
+    gap_x     = spec["gap_x"]
+    gap_y     = spec["gap_y"]
+
+    result = []
+    for r in range(rows):
+        for c in range(cols):
+            left = margin_l + c * (label_w + gap_x)
+            top  = margin_t + r * (label_h + gap_y)
+            # label_html의 첫 <div class="label..."> 에 style 주입
+            cell = label_html.replace(
+                '<div class="label ',
+                f'<div style="left:{left:.3f}mm;top:{top:.3f}mm;" class="label ',
+                1,
+            )
+            result.append(cell)
+    return "\n".join(result)
+
+
 def make_label_html(
     product_name,
     supplier_info,
@@ -230,23 +259,17 @@ body {{
 }}
 
 .sheet {{
+    position: relative;
     width: 210mm;
     height: 297mm;
-    padding-top: {spec['margin_top']}mm;
-    padding-left: {spec['margin_left']}mm;
-    display: grid;
-    grid-template-columns: repeat({spec['cols']}, {spec['label_w']}mm);
-    grid-template-rows: repeat({spec['rows']}, {spec['label_h']}mm);
-    column-gap: {spec['gap_x']}mm;
-    row-gap: {spec['gap_y']}mm;
-    transform: translate({offset_x}mm, {offset_y}mm);
+    overflow: hidden;
 }}
 
 .label {{
+    position: absolute;
+    box-sizing: border-box;
     width: {spec['label_w']}mm;
     height: {spec['label_h']}mm;
-    max-height: {spec['label_h']}mm;
-    box-sizing: border-box;
     border: 1px solid #999;
     padding: {spec['padding']}mm;
     padding-top: {"1.5mm" if spec["label_h"] <= 40 else "2mm"};
@@ -418,7 +441,7 @@ body {{
 </head>
 <body>
 <div class="sheet">
-    {label_one * (spec['cols'] * spec['rows'])}
+    {_make_label_cells(label_one, spec, offset_x, offset_y)}
 </div>
 
 <script>
