@@ -16,7 +16,6 @@ preview*.html
 test_page.png
 
 # 로그 / 디버그 파일
-*.txt
 *.log
 app_error*.txt
 app_run.txt
@@ -26,6 +25,7 @@ run_debug.txt
 src_stderr.txt
 stderr.txt
 stdout.txt
+test_output*.txt
 
 # 테스트 출력물
 test_output*.txt
