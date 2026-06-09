@@ -709,4 +709,15 @@ def main(page: ft.Page):
 
 
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 회사 보안망 환경: localhost DNS 조회 차단 대응
+# getaddrinfo failed (Errno 11001) 방지 → IP 직접 지정
+import socket
+_orig_getaddrinfo = socket.getaddrinfo
+def _patched_getaddrinfo(host, *args, **kwargs):
+    if host == "localhost":
+        host = "127.0.0.1"
+    return _orig_getaddrinfo(host, *args, **kwargs)
+socket.getaddrinfo = _patched_getaddrinfo
+
 ft.run(main, assets_dir=_APP_DIR)
