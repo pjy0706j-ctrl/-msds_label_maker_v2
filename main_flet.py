@@ -82,7 +82,7 @@ def panel(title: str, controls: list, width=None, expand=False,
 
 
 def main(page: ft.Page):
-    page.title = "MSDS Label Maker v2.0.0"
+    page.title = "MSDS Label Maker v2.1.0 (2026-06-11)"
     page.window.width  = 1600
     page.window.height = 960
     page.bgcolor = "#F1F3F5"
@@ -307,7 +307,7 @@ def main(page: ft.Page):
                 for f in get_selected_pictograms()
                 if os.path.exists(os.path.join(ghs_dir, f))]
         signal_val   = signal_field.value or ""
-        signal_color = "#C0392B" if signal_val == "위험" else "#E67E22" if signal_val == "경고" else "#6C757D"
+        signal_color = "#C0392B" if signal_val in ("위험", "경고") else "#212529"
 
         def sec(title, body):
             return ft.Column([
@@ -684,9 +684,9 @@ def main(page: ft.Page):
     header = ft.Container(
         content=ft.Row([
             ft.Column([
-                ft.Text("🧪 MSDS Label Maker v2.0.0",
+                ft.Text("🧪 MSDS Label Maker v2.1.0",
                         size=20, weight=ft.FontWeight.BOLD, color="white"),
-                ft.Text("👨‍💻 박재영  |  🏢 LX글라스 연구기획팀  |  📅 2026-06-09",
+                ft.Text("👨‍💻 박재영  |  🏢 LX글라스 연구기획팀  |  📅 2026-06-11",
                         size=11, color="#ADB5BD"),
             ], spacing=2),
             ft.Container(expand=True),
@@ -708,7 +708,13 @@ def main(page: ft.Page):
     )
 
 
+import sys
+
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# PyInstaller 번들 실행 시 번들된 flet 클라이언트를 사용 (인터넷 다운로드 방지)
+if getattr(sys, "frozen", False):
+    os.environ.setdefault("FLET_VIEW_PATH", os.path.join(sys._MEIPASS, "flet_client"))
 
 # 회사 보안망 환경: localhost DNS 조회 차단 대응
 # getaddrinfo failed (Errno 11001) 방지 → IP 직접 지정
