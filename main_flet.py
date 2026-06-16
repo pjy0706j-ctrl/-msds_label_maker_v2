@@ -348,14 +348,68 @@ def main(page: ft.Page):
         page.update()
 
     def on_print_html(e):
-        """인쇄용 HTML을 생성하고 브라우저로 열기"""
-        html = build_html()
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "print_label.html")
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(html)
-        webbrowser.open(path)
-        status_bar.value = f"🖨 인쇄 창 열기: {path}"
-        page.update()
+        """인쇄 전 확인 다이얼로그 표시 후 HTML 생성"""
+
+        def _do_print(_):
+            page.close(dlg)
+            html = build_html()
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "print_label.html")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(html)
+            webbrowser.open(path)
+            status_bar.value = f"🖨 인쇄 창 열기: {path}"
+            page.update()
+
+        def _cancel(_):
+            page.close(dlg)
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("⚠  인쇄 전 필수 확인사항", size=15, weight=ft.FontWeight.BOLD,
+                          color="#C0392B"),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text(
+                        "본 프로그램은 MSDS PDF에서 경고표지 항목을 자동으로 추출하며,\n"
+                        "추출 결과의 정확성을 100% 보장하지 않습니다.",
+                        size=12, color="#212529",
+                    ),
+                    ft.Divider(height=10, color="#DEE2E6"),
+                    ft.Text("인쇄 전 아래 항목을 반드시 직접 확인하세요.", size=12,
+                            weight=ft.FontWeight.BOLD, color="#343A40"),
+                    ft.Column([
+                        ft.Text("✔  제품명이 원본 MSDS와 일치하는지 확인", size=11, color="#495057"),
+                        ft.Text("✔  신호어(위험 / 경고)가 올바르게 적용됐는지 확인", size=11, color="#495057"),
+                        ft.Text("✔  유해·위험문구(H코드) 누락 또는 오기재 여부 확인", size=11, color="#495057"),
+                        ft.Text("✔  예방조치문구(P코드) 누락 또는 오기재 여부 확인", size=11, color="#495057"),
+                        ft.Text("✔  GHS 그림문자가 해당 물질에 맞게 선택됐는지 확인", size=11, color="#495057"),
+                        ft.Text("✔  공급자 정보(회사명·주소·긴급연락처)가 정확한지 확인", size=11, color="#495057"),
+                        ft.Text("✔  선택한 라벨 규격이 실제 라벨지(아이라벨)와 일치하는지 확인", size=11, color="#495057"),
+                    ], spacing=4),
+                    ft.Divider(height=10, color="#DEE2E6"),
+                    ft.Text(
+                        "※ 본 프로그램은 경고표지 작성을 보조하는 도구입니다.\n"
+                        "   법적 효력이 있는 최종 경고표지의 정확성에 대한 책임은\n"
+                        "   출력자 본인에게 있습니다.",
+                        size=11, color="#6C757D", italic=True,
+                    ),
+                ], spacing=8, tight=True),
+                width=480,
+            ),
+            actions=[
+                ft.TextButton("취소", on_click=_cancel,
+                              style=ft.ButtonStyle(color="#6C757D")),
+                ft.ElevatedButton(
+                    "확인 완료 — 인쇄 진행",
+                    on_click=_do_print,
+                    style=ft.ButtonStyle(
+                        bgcolor="#C0392B", color="white",
+                    ),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        page.open(dlg)
 
     def schedule_refresh(e=None):
         """필드 변경 시 0.5초 후 자동 갱신 (디바운스)"""
@@ -689,9 +743,23 @@ def main(page: ft.Page):
                 ft.Text("👨‍💻 박재영  |  🏢 LX글라스 연구기획팀  |  📅 2026-06-16",
                         size=11, color="#ADB5BD"),
             ], spacing=2),
-            ft.Container(expand=True),
+            ft.Container(width=24),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text(
+                        "⚠  본 프로그램은 MSDS 경고표지 작성 보조 도구입니다.",
+                        size=11, weight=ft.FontWeight.BOLD, color="#FFD166",
+                    ),
+                    ft.Text(
+                        "자동 추출 결과는 참고용이며, 출력 전 반드시 원본 MSDS와 대조·검토 후 사용하십시오.  "
+                        "│  Windows 64비트 전용",
+                        size=10, color="#ADB5BD",
+                    ),
+                ], spacing=1),
+                expand=True,
+            ),
             status_bar,
-        ]),
+        ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
         bgcolor="#343A40",
         padding=ft.padding.Padding(left=16, right=16, top=10, bottom=10),
         border_radius=6,
