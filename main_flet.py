@@ -352,6 +352,7 @@ def main(page: ft.Page):
 
         def _do_print(_):
             dlg.open = False
+            page.overlay.remove(dlg)
             page.update()
             html = build_html()
             path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "print_label.html")
@@ -363,6 +364,7 @@ def main(page: ft.Page):
 
         def _cancel(_):
             dlg.open = False
+            page.overlay.remove(dlg)
             page.update()
 
         dlg = ft.AlertDialog(
@@ -411,7 +413,7 @@ def main(page: ft.Page):
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        page.dialog = dlg
+        page.overlay.append(dlg)
         dlg.open = True
         page.update()
 
