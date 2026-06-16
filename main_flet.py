@@ -82,7 +82,7 @@ def panel(title: str, controls: list, width=None, expand=False,
 
 
 def main(page: ft.Page):
-    page.title = "MSDS Label Maker v2.1.0 (2026-06-11)"
+    page.title = "MSDS Label Maker v1.0.0 (2026-06-16)"
     page.window.width  = 1600
     page.window.height = 960
     page.bgcolor = "#F1F3F5"
@@ -684,9 +684,9 @@ def main(page: ft.Page):
     header = ft.Container(
         content=ft.Row([
             ft.Column([
-                ft.Text("🧪 MSDS Label Maker v2.1.0",
+                ft.Text("🧪 MSDS Label Maker v1.0.0",
                         size=20, weight=ft.FontWeight.BOLD, color="white"),
-                ft.Text("👨‍💻 박재영  |  🏢 LX글라스 연구기획팀  |  📅 2026-06-11",
+                ft.Text("👨‍💻 박재영  |  🏢 LX글라스 연구기획팀  |  📅 2026-06-16",
                         size=11, color="#ADB5BD"),
             ], spacing=2),
             ft.Container(expand=True),
