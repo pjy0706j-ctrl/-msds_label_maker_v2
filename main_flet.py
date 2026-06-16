@@ -351,7 +351,8 @@ def main(page: ft.Page):
         """인쇄 전 확인 다이얼로그 표시 후 HTML 생성"""
 
         def _do_print(_):
-            page.close(dlg)
+            dlg.open = False
+            page.update()
             html = build_html()
             path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "print_label.html")
             with open(path, "w", encoding="utf-8") as f:
@@ -361,7 +362,8 @@ def main(page: ft.Page):
             page.update()
 
         def _cancel(_):
-            page.close(dlg)
+            dlg.open = False
+            page.update()
 
         dlg = ft.AlertDialog(
             modal=True,
@@ -409,7 +411,9 @@ def main(page: ft.Page):
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        page.open(dlg)
+        page.dialog = dlg
+        dlg.open = True
+        page.update()
 
     def schedule_refresh(e=None):
         """필드 변경 시 0.5초 후 자동 갱신 (디바운스)"""
