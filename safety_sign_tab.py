@@ -159,6 +159,11 @@ class SafetySignLibrary:
 #   gap_x/gap_y : 칸 사이 가로·세로 간격
 #   corner_r    : 라벨 모서리 라운드(mm)
 PRINT_SPECS = {
+    "아이라벨 233 (62×91mm · 9칸)": {
+        "w_mm": 62.0, "h_mm": 91.0, "cols": 3, "rows": 3,
+        "margin_left": 9.0, "margin_top": 12.0, "gap_x": 3.0, "gap_y": 0.0,
+        "corner_r": 0.0,
+    },
     "아이라벨 424 (100×70mm · 8칸)": {
         "w_mm": 100.0, "h_mm": 70.0, "cols": 2, "rows": 4,
         "margin_left": 5.0, "margin_top": 5.5, "gap_x": 0.0, "gap_y": 2.0,
