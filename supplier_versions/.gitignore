@@ -1,0 +1,12 @@
+# 빌드 중간 산출물
+_build/
+*.spec
+
+# 빌드 결과 EXE(용량 큼) — 로컬 배포, git 미추적
+Hansung/
+BMS/
+DaehanSlag/
+
+# 실행 중 생성되는 출력물
+*_label_*.html
+run_*.txt

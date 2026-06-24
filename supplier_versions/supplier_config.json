@@ -1,0 +1,18 @@
+{
+  "_안내": "공급사별 허용 제품·회사정보 설정 파일. 공급사 추가 시 이 파일에 항목만 추가하면 됩니다. company_info의 [    ] 부분은 실제 공급사 정보로 반드시 수정하세요.",
+  "Hansung": {
+    "display_name": "한성",
+    "products": ["석회석", "백운석"],
+    "company_info": "공급자: 한성\n주소: [주소 입력]\n긴급연락처: [전화번호 입력]"
+  },
+  "BMS": {
+    "display_name": "BMS",
+    "products": ["장석"],
+    "company_info": "공급자: BMS\n주소: [주소 입력]\n긴급연락처: [전화번호 입력]"
+  },
+  "DaehanSlag": {
+    "display_name": "대한슬래그",
+    "products": ["Slag"],
+    "company_info": "공급자: 대한슬래그\n주소: [주소 입력]\n긴급연락처: [전화번호 입력]"
+  }
+}
