@@ -1,7 +1,7 @@
 """산업안전보건표지 출력 탭.
 
 assets(safety_signs) 폴더를 스캔하여 카테고리별 표지를 자동으로 불러오고,
-선택한 표지를 원하는 규격의 PDF로 출력하는 독립 Flet 모듈.
+선택한 표지를 원하는 규격의 HTML(인쇄용)로 출력하는 독립 Flet 모듈.
 
 새 PNG 파일을 safety_signs/<category>/ 폴더에 추가하면 코드 수정 없이
 자동으로 목록에 반영됨.
@@ -9,11 +9,11 @@ assets(safety_signs) 폴더를 스캔하여 카테고리별 표지를 자동으�
 
 import os
 import sys
+import base64
 import webbrowser
 from dataclasses import dataclass, field
 
 import flet as ft
-import fitz  # PyMuPDF
 
 if getattr(sys, "frozen", False):
     # PyInstaller 번들: safety_signs는 assets/ 하위에 위치 (ghs_images와 동일 규칙)
@@ -152,82 +152,100 @@ class SafetySignLibrary:
 
 
 # ── 출력 규격 ────────────────────────────────────────────────
+# 아이라벨(label.kr) 실제 라벨지 규격. A4(210×297mm) 기준으로 칸·여백·간격을 정확히 반영.
+#   w_mm/h_mm   : 라벨 1칸 크기
+#   cols/rows   : A4 한 장당 열·행 수
+#   margin_left : 좌우 여백, margin_top : 상하 여백
+#   gap_x/gap_y : 칸 사이 가로·세로 간격
+#   corner_r    : 라벨 모서리 라운드(mm)
 PRINT_SPECS = {
-    "98.8 x 92.7 mm": {"w_mm": 98.8, "h_mm": 92.7, "mode": "grid"},
-    "A5": {"w_mm": 148.0, "h_mm": 210.0, "mode": "single"},
-    "A4": {"w_mm": 210.0, "h_mm": 297.0, "mode": "single"},
+    "아이라벨 424 (100×70mm · 8칸)": {
+        "w_mm": 100.0, "h_mm": 70.0, "cols": 2, "rows": 4,
+        "margin_left": 5.0, "margin_top": 5.5, "gap_x": 0.0, "gap_y": 2.0,
+        "corner_r": 2.0,
+    },
+    "아이라벨 812 (196×125mm · 2칸)": {
+        "w_mm": 196.0, "h_mm": 125.0, "cols": 1, "rows": 2,
+        "margin_left": 7.0, "margin_top": 18.5, "gap_x": 0.0, "gap_y": 10.0,
+        "corner_r": 0.0,
+    },
+    "아이라벨 211 (199.1×288mm · 1칸)": {
+        "w_mm": 199.1, "h_mm": 288.0, "cols": 1, "rows": 1,
+        "margin_left": 5.45, "margin_top": 4.5, "gap_x": 0.0, "gap_y": 0.0,
+        "corner_r": 0.0,
+    },
 }
-MM_TO_PT = 72 / 25.4
+DEFAULT_SPEC = "아이라벨 424 (100×70mm · 8칸)"
 
 
-class SafetySignPdfBuilder:
-    """선택된 표지를 지정 규격의 PDF로 출력.
+def _img_to_base64(path: str) -> str:
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
 
-    소형 규격(98.8x92.7mm)은 A4 용지에 여러 칸으로 배치하고,
-    A5/A4는 표지 1개당 1페이지로 출력한다.
-    추후 복합표지(여러 표지를 한 칸에 합성) 확장 시 _draw_sign_cell만 교체하면 된다.
+
+class SafetySignHtmlBuilder:
+    """선택된 표지를 지정 라벨 규격의 인쇄용 HTML로 출력 (GHS 라벨과 동일하게 브라우저에서 열림).
+
+    A4 한 장에 cols×rows 칸으로 배치하며, 칸을 다 채우면 다음 페이지로 넘어간다.
+    각 라벨지(아이라벨)의 실제 여백·간격을 반영해 라벨 위치가 정확히 맞도록 한다.
+    추후 복합표지(여러 표지를 한 칸에 합성) 확장 시 _cell_html만 교체하면 된다.
     """
 
     def __init__(self, spec_key: str):
-        self.spec = PRINT_SPECS.get(spec_key, PRINT_SPECS["98.8 x 92.7 mm"])
+        self.spec_key = spec_key
+        self.spec = PRINT_SPECS.get(spec_key, PRINT_SPECS[DEFAULT_SPEC])
 
     def build(self, signs: list[SafetySign], output_path: str) -> str:
-        doc = fitz.open()
-        if self.spec["mode"] == "grid":
-            self._build_grid(doc, signs)
-        else:
-            self._build_single_per_page(doc, signs)
-        doc.save(output_path)
-        doc.close()
+        html = self._build_grid(signs)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(html)
         return output_path
 
-    def _build_grid(self, doc, signs: list[SafetySign]):
-        page_w, page_h = 210 * MM_TO_PT, 297 * MM_TO_PT
-        label_w = self.spec["w_mm"] * MM_TO_PT
-        label_h = self.spec["h_mm"] * MM_TO_PT
-        margin = 10 * MM_TO_PT
-        gap = 4 * MM_TO_PT
+    def _cell_html(self, sign: SafetySign) -> str:
+        b64 = _img_to_base64(sign.path)
+        return (
+            f'<div class="sign">'
+            f'<img src="data:image/png;base64,{b64}">'
+            f'</div>'
+        )
 
-        cols = max(1, int((page_w - 2 * margin + gap) // (label_w + gap)))
-        rows = max(1, int((page_h - 2 * margin + gap) // (label_h + gap)))
-        per_page = cols * rows
-
+    def _build_grid(self, signs: list[SafetySign]) -> str:
+        s = self.spec
+        per_page = s["cols"] * s["rows"]
+        # 빈 칸을 placeholder로 채워 그리드 정렬 유지
+        sheets = []
         for start in range(0, len(signs), per_page):
-            page = doc.new_page(width=page_w, height=page_h)
             chunk = signs[start:start + per_page]
-            for idx, sign in enumerate(chunk):
-                col = idx % cols
-                row = idx // cols
-                x0 = margin + col * (label_w + gap)
-                y0 = margin + row * (label_h + gap)
-                self._draw_sign_cell(page, sign, x0, y0, label_w, label_h, caption_size=9)
+            cells = "".join(self._cell_html(sign) for sign in chunk)
+            cells += '<div class="sign empty"></div>' * (per_page - len(chunk))
+            sheets.append(f'<div class="sheet">{cells}</div>')
+        sheets_html = "\n".join(sheets)
 
-    def _build_single_per_page(self, doc, signs: list[SafetySign]):
-        page_w = self.spec["w_mm"] * MM_TO_PT
-        page_h = self.spec["h_mm"] * MM_TO_PT
-        for sign in signs:
-            page = doc.new_page(width=page_w, height=page_h)
-            margin = 15 * MM_TO_PT
-            self._draw_sign_cell(page, sign, margin, margin,
-                                  page_w - 2 * margin, page_h - 2 * margin,
-                                  caption_size=18)
-
-    def _draw_sign_cell(self, page, sign: SafetySign, x0, y0, w, h, caption_size):
-        caption_h = caption_size * 1.8
-        img_rect = fitz.Rect(x0, y0, x0 + w, y0 + h - caption_h)
-
-        pix = fitz.Pixmap(sign.path)
-        img_w, img_h = pix.width, pix.height
-        scale = min(img_rect.width / img_w, img_rect.height / img_h)
-        draw_w, draw_h = img_w * scale, img_h * scale
-        cx = img_rect.x0 + (img_rect.width - draw_w) / 2
-        cy = img_rect.y0 + (img_rect.height - draw_h) / 2
-        page.insert_image(fitz.Rect(cx, cy, cx + draw_w, cy + draw_h), filename=sign.path)
-
-        caption_rect = fitz.Rect(x0, y0 + h - caption_h, x0 + w, y0 + h)
-        page.insert_textbox(caption_rect, sign.name_kr, fontsize=caption_size,
-                             fontname="helv", align=1)
-        page.draw_rect(fitz.Rect(x0, y0, x0 + w, y0 + h), color=(0.6, 0.6, 0.6), width=0.5)
+        return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+@page {{ size: 210mm 297mm; margin: 0; }}
+body {{ margin:0; padding:0; font-family:'Malgun Gothic',Arial,sans-serif;
+       -webkit-print-color-adjust:exact; print-color-adjust:exact; }}
+.sheet {{
+    width:210mm; height:297mm; box-sizing:border-box;
+    padding:{s['margin_top']}mm {s['margin_left']}mm;
+    display:grid;
+    grid-template-columns:repeat({s['cols']}, {s['w_mm']}mm);
+    grid-template-rows:repeat({s['rows']}, {s['h_mm']}mm);
+    column-gap:{s['gap_x']}mm; row-gap:{s['gap_y']}mm;
+    page-break-after:always;
+}}
+.sign {{
+    width:{s['w_mm']}mm; height:{s['h_mm']}mm; box-sizing:border-box;
+    border:1px solid #999; border-radius:{s['corner_r']}mm;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+}}
+.sign.empty {{ border:1px dashed #ddd; }}
+.sign img {{ width:90%; height:90%; object-fit:contain; }}
+</style></head><body>
+{sheets_html}
+</body></html>"""
 
 
 # ── Flet UI ──────────────────────────────────────────────────
@@ -235,51 +253,95 @@ def build_safety_sign_tab(page: ft.Page) -> ft.Row:
     """'산업안전보건표지 출력' 탭 콘텐츠를 생성. main_flet.py 의 Tabs 에 연결해서 사용."""
 
     library = SafetySignLibrary()
-    selected: dict[str, bool] = {}
+    sign_by_path = {s.path: s for s in library.all_signs()}
+    quantities: dict[str, int] = {}   # path → 출력 수량(부수). 0/없음 = 미선택
+    checkbox_by_path: dict[str, ft.Checkbox] = {}
 
     preview_grid = ft.GridView(
-        expand=True, runs_count=3, max_extent=160,
-        child_aspect_ratio=0.85, spacing=8, run_spacing=8,
+        expand=True, max_extent=240,
+        child_aspect_ratio=0.72, spacing=12, run_spacing=12,
     )
     spec_radio = ft.RadioGroup(
-        value="98.8 x 92.7 mm",
-        content=ft.Column([
-            ft.Radio(value="98.8 x 92.7 mm", label="98.8 x 92.7 mm"),
-            ft.Radio(value="A5", label="A5"),
-            ft.Radio(value="A4", label="A4"),
-        ]),
+        value=DEFAULT_SPEC,
+        content=ft.Column(
+            [ft.Radio(value=k, label=k) for k in PRINT_SPECS],
+            spacing=4,
+        ),
     )
     status_text = ft.Text("", size=12, color="#6C757D")
+    count_text = ft.Text("", size=13, weight=ft.FontWeight.BOLD, color="#343A40")
+
+    def cells_per_sheet() -> int:
+        s = PRINT_SPECS.get(spec_radio.value, PRINT_SPECS[DEFAULT_SPEC])
+        return s["cols"] * s["rows"]
+
+    def total_qty() -> int:
+        return sum(q for q in quantities.values() if q > 0)
+
+    def update_count_label():
+        per = cells_per_sheet()
+        total = total_qty()
+        sheets = (total + per - 1) // per if total else 0
+        count_text.value = f"선택 수량: {total}개  /  한 장 {per}칸  →  {sheets}장 출력"
+        page.update()
+
+    def set_qty(path: str, qty: int):
+        qty = max(0, qty)
+        if qty == 0:
+            quantities.pop(path, None)
+            cb = checkbox_by_path.get(path)
+            if cb:
+                cb.value = False
+        else:
+            quantities[path] = qty
+            cb = checkbox_by_path.get(path)
+            if cb:
+                cb.value = True
+        refresh_preview()
 
     def refresh_preview():
         preview_grid.controls.clear()
         for sign in library.all_signs():
-            if selected.get(sign.path):
+            qty = quantities.get(sign.path, 0)
+            if qty > 0:
                 preview_grid.controls.append(
                     ft.Container(
                         content=ft.Column([
-                            ft.Image(src=sign.path, width=90, height=90,
-                                     fit=ft.ImageFit.CONTAIN),
-                            ft.Text(sign.name_kr, size=11, text_align=ft.TextAlign.CENTER),
+                            ft.Image(src=sign.path, width=150, height=150,
+                                     fit=ft.BoxFit.CONTAIN),
+                            ft.Text(sign.name_kr, size=13, weight=ft.FontWeight.BOLD,
+                                    text_align=ft.TextAlign.CENTER),
+                            ft.Row([
+                                ft.IconButton(ft.Icons.REMOVE_CIRCLE_OUTLINE, icon_size=22,
+                                              tooltip="수량 -",
+                                              on_click=lambda e, p=sign.path: set_qty(p, quantities.get(p, 0) - 1)),
+                                ft.Container(
+                                    content=ft.Text(f"{qty}", size=15, weight=ft.FontWeight.BOLD),
+                                    width=34, alignment=ft.Alignment(0, 0),
+                                ),
+                                ft.IconButton(ft.Icons.ADD_CIRCLE_OUTLINE, icon_size=22,
+                                              tooltip="수량 +",
+                                              on_click=lambda e, p=sign.path: set_qty(p, quantities.get(p, 0) + 1)),
+                            ], alignment=ft.MainAxisAlignment.CENTER, spacing=2),
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4),
-                        padding=8, border=BORDER, border_radius=6, bgcolor="white",
+                        padding=10, border=BORDER, border_radius=6, bgcolor="white",
                     )
                 )
-        page.update()
+        update_count_label()
 
     def on_toggle(sign: SafetySign, value: bool):
-        selected[sign.path] = value
-        refresh_preview()
+        set_qty(sign.path, 1 if value else 0)
 
     def build_category_block(category: str) -> ft.Column:
         signs = library.signs_by_category.get(category, [])
-        checkboxes = [
-            ft.Checkbox(
+        checkboxes = []
+        for sign in signs:
+            cb = ft.Checkbox(
                 label=sign.name_kr, value=False,
                 on_change=lambda e, s=sign: on_toggle(s, e.control.value),
             )
-            for sign in signs
-        ]
+            checkbox_by_path[sign.path] = cb
+            checkboxes.append(cb)
         return ft.Column([
             ft.Text(f"[{CATEGORY_LABELS[category]}]", size=13,
                     weight=ft.FontWeight.BOLD, color="#495057"),
@@ -292,19 +354,57 @@ def build_safety_sign_tab(page: ft.Page) -> ft.Row:
         scroll=ft.ScrollMode.AUTO, spacing=6, expand=True,
     )
 
-    def on_generate_pdf(e):
-        chosen = [s for s in library.all_signs() if selected.get(s.path)]
+    def fill_sheet(e):
+        """현재 선택된 표지들로 한 장(칸 수)을 균등하게 꽉 채움.
+        - 1종만 선택 → 그 표지로 모든 칸을 채움 (동일 표지 N개)
+        - 여러 종 선택 → 칸을 종류 수로 나눠 균등 분배 (나머지는 앞쪽부터 +1)
+        - 아무것도 선택 안 함 → 안내 메시지
+        """
+        chosen_paths = [p for p, q in quantities.items() if q > 0]
+        if not chosen_paths:
+            status_text.value = "⚠ 먼저 표지를 1개 이상 선택하세요."
+            page.update()
+            return
+        per = cells_per_sheet()
+        n = len(chosen_paths)
+        base, extra = divmod(per, n)
+        # 라이브러리 순서대로 정렬해 분배가 일관되게
+        ordered = [s.path for s in library.all_signs() if s.path in chosen_paths]
+        for i, path in enumerate(ordered):
+            quantities[path] = base + (1 if i < extra else 0)
+        refresh_preview()
+        status_text.value = f"✅ 한 장({per}칸)을 선택 표지로 채웠습니다."
+        page.update()
+
+    def clear_all(e):
+        for path in list(quantities.keys()):
+            quantities.pop(path, None)
+            cb = checkbox_by_path.get(path)
+            if cb:
+                cb.value = False
+        refresh_preview()
+        status_text.value = "전체 선택을 해제했습니다."
+        page.update()
+
+    def on_generate_html(e):
+        # 라이브러리 순서대로, 각 표지를 수량만큼 반복하여 칸 채우기
+        chosen = []
+        for sign in library.all_signs():
+            qty = quantities.get(sign.path, 0)
+            chosen.extend([sign] * qty)
         if not chosen:
             status_text.value = "⚠ 출력할 표지를 1개 이상 선택하세요."
             page.update()
             return
-        out_path = os.path.join(APP_DIR, "safety_signs_output.pdf")
-        SafetySignPdfBuilder(spec_radio.value).build(chosen, out_path)
-        status_text.value = f"✅ PDF 생성 완료: {out_path}"
+        out_path = os.path.join(APP_DIR, "safety_signs_print.html")
+        SafetySignHtmlBuilder(spec_radio.value).build(chosen, out_path)
+        status_text.value = f"🖨 인쇄 창 열기: {out_path}"
         page.update()
         webbrowser.open(out_path)
 
-    def panel(title, content, width=None, expand=False):
+    spec_radio.on_change = lambda e: update_count_label()
+
+    def panel(title, content, expand=1):
         return ft.Container(
             content=ft.Column([
                 ft.Container(
@@ -317,25 +417,34 @@ def build_safety_sign_tab(page: ft.Page) -> ft.Row:
                 ft.Container(content=content, padding=10, expand=True),
             ], spacing=0, expand=True),
             border=BORDER, border_radius=6, bgcolor=BG_PANEL,
-            width=width, expand=expand,
+            expand=expand,
         )
 
-    selection_panel = panel("🚧 표지 선택", selection_column, width=260)
-    preview_panel = panel("🖼 미리보기", preview_grid, expand=True)
+    selection_panel = panel("🚧 표지 선택", selection_column)
+    preview_panel = panel("🖼 미리보기 (각 표지 수량 조절)", preview_grid)
     spec_panel = panel(
-        "📐 출력 규격",
+        "📐 출력 규격 / 수량",
         ft.Column([
             spec_radio,
+            ft.Divider(color="#DEE2E6"),
+            count_text,
+            ft.Container(height=6),
+            ft.ElevatedButton("🧩 선택 표지로 한 장 꽉 채우기", on_click=fill_sheet,
+                              width=10000,
+                              style=ft.ButtonStyle(bgcolor="#1971C2", color="white")),
+            ft.OutlinedButton("🗑 전체 해제", on_click=clear_all, width=10000),
             ft.Container(height=12),
-            ft.ElevatedButton("📄 PDF 생성", on_click=on_generate_pdf,
+            ft.ElevatedButton("🖨 인쇄 HTML 생성", on_click=on_generate_html,
+                              width=10000,
                               style=ft.ButtonStyle(bgcolor="#343A40", color="white")),
             ft.Container(height=8),
             status_text,
-        ]),
-        width=260,
+        ], spacing=6),
     )
+
+    update_count_label()
 
     return ft.Row(
         controls=[selection_panel, preview_panel, spec_panel],
-        spacing=10, expand=True, vertical_alignment=ft.CrossAxisAlignment.START,
+        spacing=10, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH,
     )
