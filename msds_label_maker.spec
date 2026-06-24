@@ -14,6 +14,7 @@ FLET_DIR  = os.path.join(os.path.expanduser("~"), ".flet", "client",
 datas = [
     # GHS 그림문자 이미지 → assets 서브폴더 (flet.exe 에 전달될 assets_dir)
     (os.path.join(APP_DIR, "ghs_images"), "assets/ghs_images"),
+    (os.path.join(APP_DIR, "safety_signs"), "assets/safety_signs"),
     # 앱 아이콘 → assets 서브폴더
     (os.path.join(APP_DIR, "app_icon.png"), "assets"),
     # ICO 는 루트에도 복사 (EXE 아이콘용)

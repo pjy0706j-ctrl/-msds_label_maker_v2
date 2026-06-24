@@ -6,6 +6,8 @@ import os
 import threading
 import fitz as _fitz
 
+from safety_sign_tab import build_safety_sign_tab
+
 from config import label_specs
 from msds_parser import (
     extract_text_from_pdf_path,
@@ -780,15 +782,34 @@ def main(page: ft.Page):
         border_radius=6,
     )
 
-    page.add(
-        header,
-        ft.Row(
-            controls=[col_pdf, col_edit, col_preview],
-            spacing=10,
+    ghs_tab_content = ft.Row(
+        controls=[col_pdf, col_edit, col_preview],
+        spacing=10,
+        expand=True,
+        vertical_alignment=ft.CrossAxisAlignment.START,
+    )
+    safety_sign_tab_content = build_safety_sign_tab(page)
+
+    main_tabs = ft.Tabs(
+        length=2,
+        selected_index=0,
+        expand=True,
+        content=ft.Column(
             expand=True,
-            vertical_alignment=ft.CrossAxisAlignment.START,
+            controls=[
+                ft.TabBar(tabs=[
+                    ft.Tab(label="GHS 경고표지 출력"),
+                    ft.Tab(label="산업안전보건표지 출력"),
+                ]),
+                ft.TabBarView(
+                    expand=True,
+                    controls=[ghs_tab_content, safety_sign_tab_content],
+                ),
+            ],
         ),
     )
+
+    page.add(header, main_tabs)
 
 
 import sys
